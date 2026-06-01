@@ -1,0 +1,628 @@
+---
+title: "FinalEDA"
+author: "RJ Worrall"
+date: "2026-04-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Preprocessing
+```{r}
+library(tidyverse)
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(plotly)
+library(stringr)
+data <- read.csv('combined_data.xlsx - Sheet1.csv')
+data <- data|>
+  mutate(Age.in.Years = as.numeric(Age.in.Years))|>
+  mutate(Date = mdy_hms(Date.Time.Call.Received))
+
+```
+
+# Questions to answer
+What are the general characteristics of emergency and fire calls? In terms of age, incident type, location category (on campus, Oxford city, etc.)
+What times of day, time of week, time of year, shift has the highest risk of fire/emergency?
+
+# Histogram of age ranges
+```{r}
+datafiltered <- data|>
+  filter(Age.in.Years!=0)|>
+  drop_na()
+
+school_data<-datafiltered|>
+  filter(month(Date)%in% c(2,3,4,5,9,10,11,12))
+
+# school months
+ggplot(school_data, aes(x = Age.in.Years)) +
+  geom_histogram(binwidth = 5, fill = "lightblue", color = "black") +
+  scale_x_continuous(limits = c(0, 100)) +
+  labs(
+    title = "Age Distribution of School Months (EMS Only)",
+    x = "Age (Years)",
+    y = "Count"
+  )
+ggsave('figure1.png')
+
+# Break Months
+break_data <- datafiltered %>%
+  filter(month(Date) %in% c(1, 6, 7, 8))
+
+ggplot(break_data, aes(x = Age.in.Years)) +
+  geom_histogram(binwidth = 5, fill = "lightblue", color = "black") +
+  scale_x_continuous(limits = c(0, 100)) +
+  labs(
+    title = "Age Distribution During School Breaks (EMS Only)",
+    x = "Age (Years)",
+    y = "Count"
+  )
+ggsave('figure2.png')
+```
+The given datasets only include age variables for the EMS calls, thus why fire is excluded. The graphs show that the majority of cases in the data are for college aged people for all EMS calls, which is expected. Even filtering out the months where students are on campus still results in the college aged having the highest number of calls surprisingly.
+
+# Histogram of Number of Calls by Week
+```{r}
+fireData<-data|>
+  filter(Call.Type=='Fire')
+         
+emsData<-data|>
+  filter(Call.Type=='EMS')
+
+ggplot(fireData,aes(x=Date))+
+  geom_histogram(binwidth = 86400 * 7,fill='lightcoral',color='black')+
+  labs(title='Distribution of Fire Calls by Week',
+  x='Date',
+  y='Count')
+
+ggplot(emsData,aes(x=Date))+
+  geom_histogram(binwidth = 86400 * 7,fill='lightblue',color='black')+
+  labs(title='Distribution of EMS Calls by Week',
+  x='Date',
+  y='Count')
+```
+The histograms of calls distributed over time shows mostly what we would expect, with more calls during the school months and less during the breaks, but the most noticeable point is that the fall semester months seem to result in a larger number of calls than the spring semester months. 
+
+# Exploring Stats by District
+```{r}
+districtFiltered<-data|>
+  group_by(district)|>
+  filter(n()>100)|>
+  ungroup()
+
+districtAge <- districtFiltered|>
+  filter(Age.in.Years != 0)|>
+  group_by(district)|>
+  summarize(districtAgev = mean(Age.in.Years))
+
+ggplot(districtFiltered, aes(x = forcats::fct_infreq(district))) +
+  geom_bar(aes(fill = Call.Type), position = 'dodge') +
+  labs(
+    x = "District",
+    y = "Count",
+    title = "Number of Fire vs EMS Calls from Common Districts (n>100)"
+  ) +
+  scale_fill_manual(values = c(EMS = 'lightblue3', Fire = 'firebrick')) +
+  theme_minimal()
+
+ggsave('figure3.png')
+
+ggplot(districtAge,aes(x=district,y=districtAgev))+
+  geom_col(fill='lightblue',color='black')+
+  labs(x="District",
+  y='Avg Age (Years)',
+  title='Average Patient Age for Common Districts')
+
+
+```
+This histogram displays the average age by district for the EMS calls. Not surprisingly, Miami has the lowest average age, but the surrounding cities and towns all have a much older average age compared to campus.
+
+# Interactive RShiny app displaying histogram of calls with options to toggle date range and call type.
+```{r}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(plotly)
+
+# -----------------------------
+# Prepare the data
+# -----------------------------
+# Convert your date column to POSIXct
+data$Date <- mdy_hms(data$Date.Time.Call.Received)
+
+# Remove unparseable dates
+data <- data %>% drop_na(Date)
+
+# Ensure Call.Type is a factor
+data$Call.Type <- factor(data$Call.Type)
+
+# -----------------------------
+# UI
+# -----------------------------
+ui <- fluidPage(
+  
+  titlePanel("Fire and EMS Call Frequency"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      
+      # Slider for date range
+      sliderInput(
+        "daterange",
+        "Select Date Range:",
+        min = min(data$Date),
+        max = max(data$Date),
+        value = c(min(data$Date), max(data$Date)),
+        timeFormat = "%Y-%m-%d"
+      ),
+      
+      # Dropdown for Fire/EMS
+      selectInput(
+        "calltype",
+        "Call Type:",
+        choices = c("Fire", "EMS"),
+        selected = "Fire"
+      ),
+      dateRangeInput(inputId="daterange", label="Pick date range",
+                       start  = "2024-01-01",
+                       end    = "2025-12-31",
+                       min    = "2024-01-01",
+                       max    = "2025-12-31",
+                       format = "mm/dd/yy")
+      
+    ),
+    
+    mainPanel(
+      plotlyOutput("histPlot")
+    )
+  )
+)
+
+# -----------------------------
+# Server
+# -----------------------------
+server <- function(input, output) {
+  
+  # Filter data based on slider and call type
+  filtered_data <- reactive({
+    data %>%
+      filter(
+        Date >= input$daterange[1],
+        Date <= input$daterange[2],
+        Call.Type == input$calltype
+      )
+  })
+  
+  # Render histogram
+  output$histPlot <- renderPlotly({
+    df <- filtered_data()
+    
+    if(nrow(df) == 0) return(NULL)
+    
+    # Determine bin width dynamically based on selected range
+    date_range_days <- as.numeric(
+  difftime(input$daterange[2], input$daterange[1], units = "days")
+)
+
+binwidth <- if (date_range_days <= 1) {
+
+  3600        # 1 hour bins
+
+} else if (date_range_days <= 7) {
+
+  3600 * 6    # 6 hour bins
+
+} else if (date_range_days <= 30) {
+
+  86400       # 1 day bins
+
+} else if (date_range_days <= 180) {
+
+  86400 * 7   # 1 week bins
+
+} else {
+
+  86400 * 30  # ~1 month bins
+}
+    
+fill_color <- if(input$calltype == "Fire") "lightcoral" else "lightblue"
+    
+    # Create ggplot histogram
+    p <- ggplot(df, aes(x = Date)) +
+      geom_histogram(binwidth = binwidth, fill = fill_color, color = alpha("black", 0.7)) +
+      labs(
+        title = paste(input$calltype, "Calls"),
+        x = "Date",
+        y = "Count"
+      ) +
+      theme_minimal()
+    
+    # Make interactive
+    ggplotly(p)
+  })
+}
+
+# Run the app
+shinyApp(ui, server)
+```
+
+This shiny app can be used to show how when calls are the most and least common based on times of day, week, month, or year, and for either fire or EMS data. Looking at a small sample of dates, calls typically occur during the evening on weekdays, and have a bit more variation on weekends.
+
+# False Alarms Exploration
+```{r}
+# Filtering out all false alarms and/or equipment malfunctions that created a call
+false_alarms <- data %>%
+  filter(
+    Patient.Disposition %in% c(
+      "Canceled (Prior to Arrival At Scene)",
+      "Canceled on Scene (No Patient Contact)",
+      "Canceled on Scene (No Patient Found)"
+    ) |
+    str_detect(Incident.Type, "alarm|detector|malfunction|false|no fire|no incident|unintentional")
+  )
+
+falseFiltered<-false_alarms|>
+  group_by(district)|>
+  filter(n()>20)|>
+  ungroup()
+
+ggplot(falseFiltered,aes(x=district))+
+  geom_bar(aes(fill = Call.Type), position = 'dodge')+
+  labs(x="District",
+  y='Count',
+  title='Number of Fire vs EMS False Alarm Calls from Common Districts (n>20)')
+
+ggplot(false_alarms,aes(x=Date))+
+  geom_histogram(binwidth = 86400*7,fill='lightblue',color='black')+
+  labs(title='Distribution of False Alarm Calls by Week',
+  x='Date',
+  y='Count')
+# Time of day funciton
+# Morning = 5am to 12 pm
+# Afternoon = 12pm to 5pm
+# Evening = 5pm to 9pm
+# Night = 9pm to 5am
+add_time_of_day <- function(df, datetime_col) {
+  df %>%
+    mutate(
+      time_of_day = case_when(
+        hour({{datetime_col}}) >= 5  & hour({{datetime_col}}) < 12 ~ "Morning",
+        hour({{datetime_col}}) >= 12 & hour({{datetime_col}}) < 17 ~ "Afternoon",
+        hour({{datetime_col}}) >= 17 & hour({{datetime_col}}) < 21 ~ "Evening",
+        TRUE ~ "Night"
+      ),
+      day_of_week = wday(Date, label = TRUE, week_start = 1)
+    )
+}
+
+false_alarms_time<-add_time_of_day(false_alarms, false_alarms$Date)
+
+ggplot(false_alarms_time,aes(x=time_of_day))+
+  geom_bar(aes(fill = Call.Type), position = 'dodge')+
+  labs(x="Time of Day",
+  y='Count',
+  title='Number of Fire vs EMS Calls by Time of Day')
+
+
+```
+Additional false alarm visualizations
+```{r}
+false_alarms_time %>%
+  group_by(district) %>%
+  filter(n() >= 20) %>%
+  ungroup() %>%
+  group_by(district) %>%
+  mutate(total = n()) %>%
+  ungroup() %>%
+  ggplot(
+    aes(
+      x = reorder(paste0(district, " (n=", total, ")"), total),
+      fill = time_of_day
+    )
+  ) +
+  geom_bar(position = "fill") +
+  labs(
+    x = "District",
+    y = "Proportion",
+    title = "Proportion of False Alarm Calls by Time of Day Across Common Districts (n>20)"
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('figure19.png')
+
+
+
+ggplot(false_alarms_time, aes(x = day_of_week, fill = Call.Type)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "False Alarm Calls by Day of Week",
+    x = "Day of Week",
+    y = "Count"
+  ) +
+  scale_fill_manual(values = c(EMS = "lightblue3", Fire = "firebrick")) +
+  theme_minimal()
+ggsave('figure18.png')
+```
+Exploring the false alarms can help a lot in preparation for a full analysis on how the Oxford Fire Dept. should allocate resources. A large majority of the false alarms are the result of fire detection tech malfunctions, which automatically log a call and thus a response. The number of calls follows the same trends by month as the normal data, with peaks in the fall, and valleys in the break months. The most important info here is that most false alarms take place at night.
+
+# Calls by hour of day
+```{r}
+data %>%
+  mutate(hour = hour(Date)) %>%
+  ggplot(aes(x = hour, fill = Call.Type)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Number of Calls by Hour of Day",
+    x = "Hour of Day",
+    y = "Count"
+  ) +
+  theme_minimal()
+ggsave('figure5.png')
+```
+
+# calls by day of week
+
+```{r}
+data %>%
+  mutate(day = wday(Date, label = TRUE)) %>%
+  ggplot(aes(x = day, fill = Call.Type)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Number of Calls by Day of Week",
+    x = "Day of Week",
+    y = "Count"
+  ) +
+  theme_minimal()
+ggsave('figure6.png')
+```
+# Common Fire/EMS incident types
+
+```{r}
+firetypes<- data|>
+ filter(!is.na(Incident.Type) & str_trim(Incident.Type) != "")
+
+firetypes %>%
+  count(Incident.Type, sort = TRUE) %>%
+  slice_head(n = 15) %>%
+  ggplot(aes(x = reorder(Incident.Type, n), y = n)) +
+  geom_col(fill = "lightblue") +
+  coord_flip() +
+  labs(
+    title = "Most Common Fire Incident Types",
+    x = "Incident Type",
+    y = "Count"
+  )
+
+ggsave('figure16.png')
+
+emstypes<-data|>
+  filter(!is.na(Patient.Disposition)& str_trim(Patient.Disposition)!="")
+
+emstypes %>%
+  count(Patient.Disposition, sort = TRUE) %>%
+  slice_head(n = 15) %>%
+  ggplot(aes(x = reorder(Patient.Disposition, n), y = n)) +
+  geom_col(fill = "lightblue") +
+  coord_flip() +
+  labs(
+    title = "Most Common EMS Incident Types",
+    x = "Incident Type",
+    y = "Count"
+  )
+ggsave('figure17.png')
+
+```
+
+# heatmap of calls by hour of day
+
+```{r}
+data %>%
+  mutate(
+    hour = hour(Date),
+    day = wday(Date, label = TRUE)
+  ) %>%
+  count(day, hour) %>%
+  ggplot(aes(x = hour, y = day, fill = n)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(
+    title = "Heatmap of Calls by Hour and Day",
+    x = "Hour of Day",
+    y = "Day of Week"
+  )
+```
+# Calls by district over time
+
+```{r}
+data %>%
+  mutate(month = floor_date(Date, "month")) %>%
+  count(month, district) %>%
+  ggplot(aes(x = month, y = n, color = district)) +
+  geom_line() +
+  labs(
+    title = "Calls by District Over Time",
+    x = "Month",
+    y = "Number of Calls"
+  )
+```
+# Response times by district (cleared time - call recieved)
+
+```{r}
+response_data <- data %>%
+  mutate(
+    call_time = mdy_hms(Date.Time.Call.Received),
+    cleared_time = mdy_hms(Last.Unit.Cleared),
+    response_time = as.numeric(difftime(cleared_time, call_time, units = "mins"))
+  ) %>%
+  filter(!is.na(response_time), response_time >= 0, response_time <= 120) %>%
+  group_by(district) %>%
+  filter(n() >= 100) %>%
+  ungroup()|>
+  group_by(CAD.Agency.Number)
+
+ggplot(response_data, aes(x = response_time)) +
+  geom_histogram(binwidth = 5, fill = "lightblue3", color = "black") +
+  geom_vline(
+    data = response_data %>% group_by(district) %>% summarise(avg = mean(response_time)),
+    aes(xintercept = avg),
+    color = "firebrick",
+    linetype = "dashed"
+  ) +
+  facet_wrap(~forcats::fct_infreq(district), scales = "free_y") +
+  labs(
+    title = "Distribution of Response Times by District (n ≥ 100)",
+    x = "Response Time (Minutes)",
+    y = "Count"
+  ) +
+  theme_minimal()
+ggsave('figure4.png')
+```
+
+# Additional Heatmaps
+
+```{r}
+data %>%
+  mutate(hour = lubridate::hour(Date)) %>%
+  group_by(district) %>%
+  filter(n() >= 100) %>%
+  ungroup() %>%
+  count(district, hour) %>%
+  ggplot(aes(x = hour, y = forcats::fct_infreq(district), fill = n)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Call Volume Heatmap: District vs Hour of Day",
+    x = "Hour of Day",
+    y = "District"
+  ) +
+  theme_minimal()
+ggsave('figure20.png')
+
+data %>%
+  mutate(month = factor(month.abb[lubridate::month(Date)], levels = month.abb)) %>% 
+  group_by(district) %>%
+  filter(n() >= 100) %>%
+  ungroup() %>%
+  count(district, month) %>%
+  ggplot(aes(x = month, y = forcats::fct_infreq(district), fill = n)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Call Volume Heatmap: District vs Month of Year",
+    x = "Month of Year",
+    y = "District"
+  ) +
+  theme_minimal()
+ggsave('figure21.png')
+```
+# Boxplots of response time distributions
+
+```{r}
+response_data <- data %>%
+  mutate(
+    call_time = mdy_hms(Date.Time.Call.Received),
+    cleared_time = mdy_hms(Last.Unit.Cleared),
+    response_time = as.numeric(difftime(cleared_time, call_time, units = "mins"))
+  ) %>%
+  filter(!is.na(response_time), response_time >= 0,response_time <= 120)
+
+response_data %>%
+  mutate(
+    time_of_day = case_when(
+      hour(call_time) >= 5  & hour(call_time) < 12 ~ "Morning",
+      hour(call_time) >= 12 & hour(call_time) < 17 ~ "Afternoon",
+      hour(call_time) >= 17 & hour(call_time) < 21 ~ "Evening",
+      TRUE ~ "Night"
+    )
+  ) %>%
+  ggplot(aes(x = time_of_day, y = response_time, fill = time_of_day)) +
+  geom_boxplot() +
+  labs(
+    title = "Response Time by Time of Day",
+    x = "Time of Day",
+    y = "Response Time (Minutes)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+ggsave('figure22.png')
+
+response_data %>%
+  ggplot(aes(x = Call.Type, y = response_time, fill = Call.Type)) +
+  geom_boxplot() +
+  labs(
+    title = "Response Time by Call Type",
+    x = "Call Type",
+    y = "Response Time (Minutes)"
+  ) +
+  scale_fill_manual(values = c(EMS = "lightblue3", Fire = "firebrick")) +
+  theme_minimal()
+ggsave('figure23.png')
+
+top5_incidents <- response_data %>%
+  filter(Call.Type == "Fire") %>%  # adjust column if needed
+  count(Incident.Type, sort = TRUE) %>%
+  slice_head(n = 5) %>%
+  pull(Incident.Type)
+
+# Boxplot
+ggplot(response_data %>% filter(Call.Type == "Fire", Incident.Type %in% top5_incidents),
+       aes(x = Incident.Type, y = response_time)) +
+  geom_boxplot(fill = "firebrick") +
+  labs(title = "Response Times by Top 5 Fire Incident Types",
+       x = "Incident Type",
+       y = "Response Time (minutes)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('figure24.png')
+
+# ---- EMS Calls ----
+# Get top 5 patient dispositions
+top5_dispositions <- response_data %>%
+  filter(Call.Type == "EMS") %>%
+  count(Patient.Disposition, sort = TRUE) %>%
+  slice_head(n = 5) %>%
+  pull(Patient.Disposition)
+
+# Boxplot
+# EMS calls boxplot (without facet_wrap)
+ggplot(response_data %>% filter(Call.Type == "EMS", Patient.Disposition %in% top5_dispositions),
+       aes(x = Patient.Disposition, y = response_time)) +
+  geom_boxplot(fill = "lightblue3") +
+  labs(title = "Response Times by Top 5 EMS Patient Dispositions",
+       x = "Patient Disposition",
+       y = "Response Time (minutes)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('figure25.png')
+```
+# Boxplot of chief complaints
+
+```{r}
+filtered_data <- response_data %>%
+  filter(Patient.Disposition != "" & !is.na(Patient.Disposition))
+
+# Step 2: get top 5 Chief.Complaints
+top5_complaints <- filtered_data %>%
+  count(Complaint.Reported.by.Dispatch, sort = TRUE) %>%
+  slice_head(n = 5) %>%
+  pull(Complaint.Reported.by.Dispatch)
+
+# Step 3: boxplot response times for top 5 Chief.Complaints
+ggplot(filtered_data %>% filter(Complaint.Reported.by.Dispatch %in% top5_complaints),
+       aes(x = Complaint.Reported.by.Dispatch, y = response_time)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Response Times for Top 5 Chief Complaints",
+       x = "Chief Complaint",
+       y = "Response Time (minutes)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('figure26.png')
+```
+
