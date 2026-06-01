@@ -28,9 +28,9 @@ Tools & Skills
 
 Key Findings
 
-* Add 3–5 high-level findings from your report here.
-* Keep these understandable for nontechnical readers.
-* Focus on what the data helped the department understand.
+* Peak EMS call volume occurred during afternoon and evening hours, suggesting opportunities for staffing optimization.
+* Geographic clustering identified neighborhoods with consistently higher emergency service demand.
+* Year-over-year trends revealed increasing EMS utilization relative to fire-related incidents.
 
 Data Privacy
 
