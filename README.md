@@ -46,3 +46,4 @@ About
 
 This project reflects my interest in where people meet data: using information systems, analytics, and research to help organizations make better decisions.
 
+Miami University Data Science and Statistics Program
