@@ -9,6 +9,12 @@ Dashboard
 View the dashboard here: Oxford Fire Department Dashboard
 https://public.tableau.com/app/profile/lily.douthat/viz/
 
+View the written research report here: Oxford Fire Department Report
+https://docs.google.com/document/d/1tPBmdyG8EIThYRjMfUuvSDcH4C1kDpmXz5IoykD7eew/edit?usp=drivesdk
+
+View the presentation slide deck here: Analyzing Fire and EMS Incidents for OFD
+https://docs.google.com/presentation/d/1TEtwYzJftDuKOov2fBNNfCzBDIs15_7PpR8nqrOzNls/edit?usp=drivesdk
+
 Goals
 
 * Analyze emergency response and service trends
