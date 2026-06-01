@@ -7,10 +7,7 @@ This project analyzes emergency services data for the Oxford Fire Department to 
 Dashboard
 
 View the dashboard here: Oxford Fire Department Dashboard
-
-Report
-
-View the full report here: Oxford Fire Department Final Report
+https://public.tableau.com/app/profile/lily.douthat/viz/
 
 Goals
 
@@ -43,5 +40,3 @@ About
 
 This project reflects my interest in where people meet data: using information systems, analytics, and research to help organizations make better decisions.
 
-
-https://public.tableau.com/app/profile/lily.douthat/viz/FINALOxfordFireDepartmentDashboard/OverallCallDashboard
